@@ -1,49 +1,61 @@
-import http.server
-import socketserver
 import os
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
-PORT = int(os.environ.get("PORT", 8000))
-DIRECTORY = "firmware"
+# Path to your firmware binary file
+FILE_PATH = "latest_firmware.bin"
 
-class RangeRequestHandler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=DIRECTORY, **kwargs)
-
-    def send_head(self):
-        path = self.translate_path(self.path)
-        ctype = self.guess_type(path)
-        if not os.path.isfile(path):
-            self.send_error(404,"File not found")
-            return None
-
-        file = open(path, 'rb')
-        fs = os.fstat(file.fileno())
-        size = fs.st_size
-
-        # Check for Range header
-        range_header = self.headers.get('Range', None)
-        if range_header:
-            start, end = range_header.replace("bytes=", "").split("-")
-            start = int(start)
-            end = int(end) if end else size - 1
-            length = end - start + 1
-
-            self.send_response(206)
-            self.send_header("Content-type", ctype)
-            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
-            self.send_header("Content-Length", str(length))
-            self.end_headers()
-            file.seek(start)
-            return file
+class RangeHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        # Check if the requested file is the firmware binary
+        if self.path == "/latest_firmware.bin":
+            self.serve_file()
         else:
-            self.send_response(200)
-            self.send_header("Content-type", ctype)
-            self.send_header("Content-Length", str(size))
-            self.end_headers()
-            return file
+            self.send_error(404, "File not found")
 
-Handler = RangeRequestHandler
-httpd = socketserver.TCPServer(("", PORT), Handler)
+    def serve_file(self):
+        # Open the binary file
+        try:
+            file_size = os.path.getsize(FILE_PATH)
+            # Check for Range request
+            range_header = self.headers.get('Range')
+            if range_header:
+                # Parse the range header (e.g., "bytes=0-100")
+                range_value = range_header.strip().replace("bytes=", "")
+                byte_range = range_value.split("-")
+                start_byte = int(byte_range[0])
+                end_byte = int(byte_range[1]) if byte_range[1] else file_size - 1
 
-print(f"Serving at http://localhost:{PORT}")
-httpd.serve_forever()
+                # Serve the partial file
+                with open(FILE_PATH, 'rb') as f:
+                    f.seek(start_byte)
+                    data = f.read(end_byte - start_byte + 1)
+                    self.send_response(206)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Content-Range", f"bytes {start_byte}-{end_byte}/{file_size}")
+                    self.send_header("Content-Length", len(data))
+                    self.end_headers()
+                    self.wfile.write(data)
+            else:
+                # Serve the entire file
+                with open(FILE_PATH, 'rb') as f:
+                    data = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Content-Length", len(data))
+                    self.end_headers()
+                    self.wfile.write(data)
+        except FileNotFoundError:
+            self.send_error(404, "File not found")
+        except Exception as e:
+            self.send_error(500, f"Internal Server Error: {str(e)}")
+
+# Server setup
+def run(server_class=HTTPServer, handler_class=RangeHTTPRequestHandler, port=8080):
+    # Bind the server to all interfaces (0.0.0.0) so it's publicly accessible
+    server_address = ('0.0.0.0', port)
+    httpd = server_class(server_address, handler_class)
+    print(f"Serving at http://0.0.0.0:{port}")
+    httpd.serve_forever()
+
+if __name__ == "__main__":
+    run()
