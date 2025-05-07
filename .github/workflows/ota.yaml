@@ -1,7 +1,0 @@
-name: OTA Placeholder
-on: [push]
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "OTA Setup Ready"
