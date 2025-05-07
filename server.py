@@ -13,7 +13,7 @@ class RangeRequestHandler(http.server.SimpleHTTPRequestHandler):
         path = self.translate_path(self.path)
         ctype = self.guess_type(path)
         if not os.path.isfile(path):
-            self.send_error(404File not found")
+            self.send_error(404,"File not found")
             return None
 
         file = open(path, 'rb')
